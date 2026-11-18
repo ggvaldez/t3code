@@ -278,7 +278,9 @@ options.
 ### Prepared server bytecode
 
 Native macOS and Windows desktop artifact builds, and native Linux x64 and ARM64 builds, generate server
-bytecode with the packaged Electron executable, after ASAR creation and before signing. Generation imports the CLI and server
+bytecode with the packaged Electron executable after ASAR creation. On Windows, it runs after
+executable metadata editing and signing so Windows can lock the executable without blocking those
+steps. Generation imports the CLI and server
 module declarations without launching server services; worker-only modules compile normally.
 AppImage backends use temporary links for each mount and remove them on normal exit. Later launches
 reclaim abandoned cache directories whose links point to gone mounts; AppImage main-process caching

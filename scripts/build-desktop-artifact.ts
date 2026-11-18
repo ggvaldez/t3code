@@ -2789,7 +2789,11 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   arch?: typeof BuildArch.Type,
 ) {
   const buildConfig: Record<string, unknown> = {
-    afterPack: (yield* Path.Path).join(yield* RepoRoot, "scripts/prepare-server-compile-cache.cjs"),
+    // Windows can keep the executable locked for writes after running the cache generator.
+    [platform === "win" ? "afterSign" : "afterPack"]: (yield* Path.Path).join(
+      yield* RepoRoot,
+      "scripts/prepare-server-compile-cache.cjs",
+    ),
     appId: DESKTOP_APP_ID,
     productName: resolveDesktopProductName(version),
     artifactName: "T3-Code-${version}-${arch}.${ext}",
@@ -3205,6 +3209,7 @@ const countPayloadFiles = Effect.fn("desktopArtifact.countPayloadFiles")(functio
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const pendingDirectories = [root];
+  const preparedCache = path.join(root, "resources", "server-compile-cache");
   let count = 0;
 
   while (pendingDirectories.length > 0) {
@@ -3213,6 +3218,7 @@ const countPayloadFiles = Effect.fn("desktopArtifact.countPayloadFiles")(functio
     const entries = yield* fs.readDirectory(directory);
     for (const entry of entries) {
       const entryPath = path.join(directory, entry);
+      if (entryPath === preparedCache) continue;
       const stat = yield* fs.stat(entryPath);
       if (stat.type === "Directory") {
         pendingDirectories.push(entryPath);

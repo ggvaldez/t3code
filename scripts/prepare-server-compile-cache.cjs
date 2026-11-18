@@ -4,7 +4,7 @@ const path = require("node:path");
 const fs = require("node:fs");
 const os = require("node:os");
 
-// afterPack runs before signing and installer creation, against the final ASAR layout.
+// Run against the final ASAR layout before installer creation.
 module.exports = async ({ appOutDir, electronPlatformName, arch, packager }) => {
   if (!["darwin", "win32", "linux"].includes(electronPlatformName)) {
     console.log(`[server-compile-cache] Skipping unsupported target ${electronPlatformName}`);

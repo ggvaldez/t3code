@@ -964,11 +964,19 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
         const fixture = yield* makeWindowsPayloadFixture({ copyUnpackedNatives: true });
-        const result = yield* validateWindowsPackagedPayload({
+        const validation = {
           stageDistDir: fixture.stageDistDir,
           appExecutableName: fixture.appExecutableName,
-          targetArch: "x64",
+          targetArch: "x64" as const,
           appVersion: WINDOWS_PAYLOAD_FIXTURE_VERSION,
+        };
+        const original = yield* validateWindowsPackagedPayload(validation);
+        const cache = path.join(fixture.packagedAppDir, "resources", "server-compile-cache");
+        yield* fs.makeDirectory(cache, { recursive: true });
+        yield* fs.writeFileString(path.join(cache, "manifest.json"), "{}");
+        const result = yield* validateWindowsPackagedPayload({
+          ...validation,
+          fileLimit: original.fileCount,
         });
 
         const secondAsarPath = path.join(path.dirname(fixture.generatedAsarPath), "second.asar");
