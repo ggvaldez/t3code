@@ -1117,6 +1117,25 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {
   });
 
   describe("browse", () => {
+    it.effect("finds direct Git checkouts in a workspace folder", () =>
+      Effect.gen(function* () {
+        const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+        const cwd = yield* makeTempDir({ prefix: "t3code-workspace-browse-git-" });
+        yield* writeTextFile(cwd, "repo/.git/HEAD", "ref: refs/heads/main\n");
+        yield* writeTextFile(cwd, "worktree/.git", "gitdir: ../repo/.git/worktrees/worktree\n");
+        yield* writeTextFile(cwd, "container/nested/.git/HEAD", "ref: refs/heads/main\n");
+
+        const result = yield* workspaceEntries.browse({
+          partialPath: "./",
+          cwd,
+          gitRepositoriesOnly: true,
+        });
+
+        expect(result.gitRepositoriesOnly).toBe(true);
+        expect(result.entries.map((entry) => entry.name)).toEqual(["repo", "worktree"]);
+      }),
+    );
+
     it.effect("shows dot directories in directory mode and hidden-prefix mode", () =>
       Effect.gen(function* () {
         const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;

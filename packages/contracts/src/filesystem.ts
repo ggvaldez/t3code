@@ -29,6 +29,7 @@ export type FilesystemGetMetadataResult = typeof FilesystemGetMetadataResult.Typ
 export const FilesystemBrowseInput = Schema.Struct({
   partialPath: TrimmedNonEmptyString.check(Schema.isMaxLength(FILESYSTEM_PATH_MAX_LENGTH)),
   cwd: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(FILESYSTEM_PATH_MAX_LENGTH))),
+  gitRepositoriesOnly: Schema.optional(Schema.Boolean),
 });
 export type FilesystemBrowseInput = typeof FilesystemBrowseInput.Type;
 
@@ -41,6 +42,8 @@ export type FilesystemBrowseEntry = typeof FilesystemBrowseEntry.Type;
 export const FilesystemBrowseResult = Schema.Struct({
   parentPath: TrimmedNonEmptyString,
   entries: Schema.Array(FilesystemBrowseEntry),
+  // Older servers can ignore the filter in the request and return ordinary directory entries.
+  gitRepositoriesOnly: Schema.optional(Schema.Literal(true)),
 });
 export type FilesystemBrowseResult = typeof FilesystemBrowseResult.Type;
 

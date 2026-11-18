@@ -2,12 +2,14 @@ import {
   EnvironmentId,
   ProjectId,
   ThreadId,
+  type FilesystemBrowseEntry,
   type ScopedThreadRef,
   type ThreadPullRequestLink,
 } from "@t3tools/contracts";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
+import { useState } from "react";
 
 const SCRATCH_ROOT = "/home/user/.t3/scratch";
 
@@ -57,27 +59,32 @@ vi.mock(import("~/state/entities"), async (importOriginal) => ({
         : [],
     )) as never,
 }));
-// Neither folder is a repository, which is what the server reports for both.
 vi.mock(import("~/state/vcs"), async (importOriginal) => {
   const actual = await importOriginal();
-  const notARepo = Atom.make(
-    AsyncResult.success({
-      isRepo: false,
-      hasPrimaryRemote: false,
-      isDefaultRef: false,
-      refName: null,
-      hasWorkingTreeChanges: false,
-      workingTree: { files: [], insertions: 0, deletions: 0 },
-      hasUpstream: false,
-      aheadCount: 0,
-      behindCount: 0,
-      aheadOfDefaultCount: 0,
-      pr: null,
-    }),
-  );
+  const status = Atom.family((cwd: string) => {
+    const repository = cwd.startsWith("/work/plain/repo-") ? cwd.split("/").at(-1) : undefined;
+    return Atom.make(
+      AsyncResult.success({
+        isRepo: repository !== undefined,
+        hasPrimaryRemote: false,
+        isDefaultRef: false,
+        refName: repository ? `branch-${repository}` : null,
+        hasWorkingTreeChanges: false,
+        workingTree: { files: [], insertions: 0, deletions: 0 },
+        hasUpstream: false,
+        aheadCount: 0,
+        behindCount: 0,
+        aheadOfDefaultCount: 0,
+        pr: null,
+      }),
+    );
+  });
   return {
     ...actual,
-    vcsEnvironment: { ...actual.vcsEnvironment, status: (() => notARepo) as never },
+    vcsEnvironment: {
+      ...actual.vcsEnvironment,
+      status: ((target) => status(target.input.cwd)) as typeof actual.vcsEnvironment.status,
+    },
   };
 });
 
@@ -125,7 +132,14 @@ function setup(input: {
   };
 }
 
-function Panel({ fixture }: { fixture: ReturnType<typeof setup> }) {
+function Panel({
+  fixture,
+  repositories,
+}: {
+  fixture: ReturnType<typeof setup>;
+  repositories?: readonly FilesystemBrowseEntry[];
+}) {
+  const [repositoryCwd, setRepositoryCwd] = useState(repositories?.[0]?.fullPath);
   const noop = () => {};
   const scriptResult = async () => ({ ok: true }) as never;
   return (
@@ -159,6 +173,9 @@ function Panel({ fixture }: { fixture: ReturnType<typeof setup> }) {
         showOpenInPicker={false}
         openInShortcutEnabled={false}
         gitCwd={state.folder}
+        repositories={repositories}
+        repositoryCwd={repositoryCwd}
+        onRepositoryChange={setRepositoryCwd}
         workspaceMutationId={null}
         isGitRepo={false}
         envLocked
@@ -201,6 +218,23 @@ it("shows a linked pull request in a folder that is not a git repository", async
   await expect.element(page.getByRole("region", { name: "Workspace" })).toBeVisible();
   await expect.element(page.getByText("#27513")).toBeVisible();
   await expect.element(page.getByRole("button", { name: "Initialize Git" })).toBeVisible();
+});
+
+it("uses the selected checkout's branch in a project with multiple repositories", async () => {
+  using fixture = setup({ workspaceRoot: "/work/plain", folder: "/work/plain" });
+  await using _screen = await render(
+    <Panel
+      fixture={fixture}
+      repositories={[
+        { name: "repo-a", fullPath: "/work/plain/repo-a" },
+        { name: "repo-b", fullPath: "/work/plain/repo-b" },
+      ]}
+    />,
+  );
+  await expect.element(page.getByText("branch-repo-a", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Repository" }).click();
+  await page.getByRole("menuitemradio", { name: "repo-b" }).click();
+  await expect.element(page.getByText("branch-repo-b", { exact: true })).toBeVisible();
 });
 
 it("offers no Initialize Git before the server config says where No project lives", async () => {

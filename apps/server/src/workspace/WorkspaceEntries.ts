@@ -265,9 +265,23 @@ export const make = Effect.gen(function* () {
         }
       }
 
+      const matchingEntries = input.gitRepositoriesOnly
+        ? yield* Effect.filter(
+            entries,
+            (entry) =>
+              Effect.promise(() =>
+                NodeFSP.stat(path.join(entry.fullPath, ".git")).then(
+                  (stat) => stat.isDirectory() || stat.isFile(),
+                  () => false,
+                ),
+              ),
+            { concurrency: 8 },
+          )
+        : entries;
       return {
         parentPath,
-        entries: entries.toSorted((left, right) => left.name.localeCompare(right.name)),
+        entries: matchingEntries.toSorted((left, right) => left.name.localeCompare(right.name)),
+        ...(input.gitRepositoriesOnly ? { gitRepositoriesOnly: true as const } : {}),
       };
     },
   );

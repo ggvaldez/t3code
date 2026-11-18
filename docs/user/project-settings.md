@@ -64,6 +64,12 @@ back. On mobile, both are in **Settings → Projects → Organize**.
 
 A project on several machines must have every machine connected to pin or archive it.
 
+## Projects with multiple Git repositories
+
+Add the parent folder as a project. If it contains Git checkouts directly inside it, open the thread details and use **Repository** to choose one. Branch switching, Git actions, and the Changes view use the selected checkout. The agent and terminal still start from the project folder.
+
+The repository picker is available in the web and desktop clients for project folders with no Git checkout of their own.
+
 ## Worktree branch names
 
 In **Settings → Worktrees → Worktree branch naming**, choose a static prefix,

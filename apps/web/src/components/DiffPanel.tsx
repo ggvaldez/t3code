@@ -212,6 +212,7 @@ interface DiffPanelProps {
   mode?: DiffPanelMode;
   composerDraftTarget: ScopedThreadRef | DraftId;
   workspaceMutationId: string | null;
+  repositoryCwd?: string | undefined;
   visible: boolean;
 }
 
@@ -219,6 +220,7 @@ export default function DiffPanel({
   mode = "inline",
   composerDraftTarget,
   workspaceMutationId,
+  repositoryCwd,
   visible,
 }: DiffPanelProps) {
   const gt = useGT();
@@ -260,7 +262,15 @@ export default function DiffPanel({
         }
       : null,
   );
-  const activeCwd = activeThread?.worktreePath ?? activeProject?.workspaceRoot;
+  const workspaceCwd = activeThread?.worktreePath ?? activeProject?.workspaceRoot;
+  const diffSelection = useDiffPanelStore((state) =>
+    selectThreadDiffPanelSelection(state.byThreadKey, routeThreadRef),
+  );
+  const isGitSelection =
+    diffSelection.kind === "branch" ||
+    diffSelection.kind === "unstaged" ||
+    diffSelection.kind === "commit";
+  const activeCwd = (isGitSelection ? repositoryCwd : undefined) ?? workspaceCwd;
   const serverConfig = useAtomValue(
     serverEnvironment.configValueAtom(activeThread?.environmentId ?? null),
   );
@@ -280,10 +290,8 @@ export default function DiffPanel({
   );
   const activeRepositoryRoot =
     gitStatusQuery.data?.workingTree.rootPath ??
+    (isGitSelection ? repositoryCwd : undefined) ??
     (activeThread?.worktreePath ? undefined : activeProject?.repositoryIdentity?.rootPath);
-  const diffSelection = useDiffPanelStore((state) =>
-    selectThreadDiffPanelSelection(state.byThreadKey, routeThreadRef),
-  );
   const rememberedBaseRef = useDiffPanelStore((state) =>
     selectThreadBranchBaseRef(state, routeThreadRef),
   );
@@ -291,10 +299,6 @@ export default function DiffPanel({
   // Turn and git diffs name files from the repository root; a tool call's diff names them as
   // its provider recorded them, absolute or relative to the workspace.
   const diffPathRepositoryRoot = toolCallSelection ? undefined : activeRepositoryRoot;
-  const isGitSelection =
-    diffSelection.kind === "branch" ||
-    diffSelection.kind === "unstaged" ||
-    diffSelection.kind === "commit";
   const toolCallItems = useQuietThreadVisibleTurnItems(toolCallSelection ? routeThreadRef : null);
   const toolCallDetail = useTurnItemDetail(
     toolCallSelection && routeThreadRef
@@ -351,7 +355,9 @@ export default function DiffPanel({
         ? `commit:${selectedCommitSha}`
         : selectedGitScope;
   const collapseScopeKey = routeThreadRef
-    ? `${routeThreadRef.environmentId}:${routeThreadRef.threadId}:${reviewSectionId}`
+    ? `${routeThreadRef.environmentId}:${routeThreadRef.threadId}:${
+        isGitSelection && repositoryCwd ? `${repositoryCwd}:` : ""
+      }${reviewSectionId}`
     : null;
   const codeViewMountKey = collapseScopeKey ?? reviewSectionId;
   const selectedCheckpointRange =
@@ -760,7 +766,7 @@ export default function DiffPanel({
     openDiffFilePrimaryAction({
       threadRef: routeThreadRef,
       filePath,
-      activeCwd,
+      activeCwd: workspaceCwd,
       repositoryRoot: diffPathRepositoryRoot,
       openInEditor: (targetPath) => {
         void (async () => {

@@ -254,7 +254,9 @@ import { type TerminalContextDraft } from "../lib/terminalContext";
 import { collectInlineContextIds } from "../lib/composerContextReferences";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useKnownTerminalSessions, useThreadRunningTerminalIds } from "../state/terminalSessions";
-import { useEnvironmentQueryRefresh } from "../state/query";
+import { useEnvironmentQuery, useEnvironmentQueryRefresh } from "../state/query";
+import { filesystemEnvironment, useFilesystemReadAccess } from "../state/filesystem";
+import { useDiffPanelStore } from "../diffPanelStore";
 import { useEnvironmentScope } from "~/state/session";
 import { primaryServerKeybindingsAtom, serverEnvironment } from "../state/server";
 import { hostEnvironmentIdAtom } from "../state/primaryEnvironment";
@@ -1775,6 +1777,33 @@ export default function ChatView(props: ChatViewProps) {
     }
   }, [environmentId, gitStatusCwd, liveIsGitRepo]);
   const isGitRepo = liveIsGitRepo ?? recallCheckoutIsRepo(environmentId, gitStatusCwd) ?? true;
+  const repositoryAccess = useFilesystemReadAccess(!isGitRepo ? environmentId : null, messages);
+  const repositoryQuery = useEnvironmentQuery(
+    !isGitRepo &&
+      !activeProjectIsScratch &&
+      activeThreadWorktreePath === null &&
+      activeProjectCwd !== null &&
+      repositoryAccess.canReadFiles
+      ? filesystemEnvironment.browse({
+          environmentId,
+          input: { partialPath: "./", cwd: activeProjectCwd, gitRepositoriesOnly: true },
+        })
+      : null,
+  );
+  const repositories = repositoryQuery.data?.gitRepositoriesOnly
+    ? repositoryQuery.data.entries
+    : undefined;
+  const [repositorySelection, setRepositorySelection] = useState<{
+    environmentId: EnvironmentId;
+    workspaceRoot: string | null;
+    path: string;
+  } | null>(null);
+  const selectedRepository =
+    (repositorySelection?.environmentId === environmentId &&
+    repositorySelection.workspaceRoot === activeProjectCwd
+      ? repositories?.find((repository) => repository.fullPath === repositorySelection.path)
+      : undefined) ?? repositories?.[0];
+  const hasSourceControl = isGitRepo || selectedRepository !== undefined;
   // Provider-native subagents cannot take messages; approvals and questions go to the top-level parent.
   const showProviderSubagentBar = isProviderSubagent;
   const composerMounted = !showProviderSubagentBar;
@@ -2432,7 +2461,7 @@ export default function ChatView(props: ChatViewProps) {
     threadPanelPresentation,
     isServerThread,
     embedded,
-    isGitRepo,
+    isGitRepo: hasSourceControl,
     browserAvailable,
     canOperatePreview,
     diffOpen,
@@ -3278,6 +3307,7 @@ export default function ChatView(props: ChatViewProps) {
       keybindings={keybindings}
       configuredPreviewUrls={configuredPreviewUrls}
       workspaceMutationId={workspaceMutationId}
+      repositoryCwd={selectedRepository?.fullPath}
       getShortcutContext={getShortcutContextStable}
       onSendAnnotation={sendPreviewAnnotationStable}
       onCloseSurface={closeRightPanelSurface}
@@ -3955,6 +3985,19 @@ export default function ChatView(props: ChatViewProps) {
                     )
                   }
                   gitCwd={gitCwd}
+                  repositories={repositories}
+                  repositoryCwd={selectedRepository?.fullPath}
+                  repositoriesPending={repositories === undefined && repositoryQuery.isPending}
+                  onRepositoryChange={(path) => {
+                    setRepositorySelection({
+                      environmentId,
+                      workspaceRoot: activeProjectCwd,
+                      path,
+                    });
+                    if (activeThreadRef) {
+                      useDiffPanelStore.getState().selectBranchBaseRef(activeThreadRef, null);
+                    }
+                  }}
                   workspaceMutationId={workspaceMutationId}
                   isGitRepo={isGitRepo}
                   envLocked={envLocked}
@@ -3985,7 +4028,7 @@ export default function ChatView(props: ChatViewProps) {
                     ? { onCheckoutPullRequestRequest: openPullRequestDialogStable }
                     : {})}
                   onComposerFocusRequest={scheduleComposerFocusStable}
-                  {...(isServerThread && isGitRepo
+                  {...(isServerThread && hasSourceControl
                     ? { onOpenChanges: openChangesFromThreadPanelStable }
                     : {})}
                   onRunProjectScript={runProjectScriptStable}
@@ -4080,7 +4123,7 @@ export default function ChatView(props: ChatViewProps) {
           onAddSideChat={sideChatsOffered ? openSideChatStable : undefined}
           browserAvailable={canOperatePreview && browserAvailable}
           terminalAvailable={activeProject !== null && canOperateTerminal}
-          diffAvailable={isServerThread && isGitRepo}
+          diffAvailable={isServerThread && hasSourceControl}
           filesAvailable={activeProject !== null}
           pullRequestAvailable={pullRequestSurfaceAvailable}
           pullRequestsAvailable={pullRequestsSurfaceAvailable}

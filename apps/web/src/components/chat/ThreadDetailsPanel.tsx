@@ -1,6 +1,7 @@
 import type {
   EditorId,
   EnvironmentId,
+  FilesystemBrowseEntry,
   ProjectId,
   ProjectScript,
   ResolvedKeybindingsConfig,
@@ -38,13 +39,13 @@ import { useClientSettings } from "../../hooks/useSettings";
 import { useProject, useServerConfigs } from "../../state/entities";
 import { ThreadDetailsThreadPrRows } from "./ThreadDetailsPrRows";
 import { cn } from "../../lib/utils";
-import { SlidersHorizontalIcon } from "lucide-react";
+import { FolderGitIcon, SlidersHorizontalIcon } from "lucide-react";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import {
   THREAD_DETAILS_PANEL_ICON_CLASS,
   THREAD_DETAILS_PANEL_LABEL_CLASS,
 } from "./threadDetailsPanelStyles";
-import { Menu, MenuPopup } from "../ui/menu";
+import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "../ui/menu";
 
 const GitActionsControl = memo(BaseGitActionsControl);
 
@@ -68,6 +69,10 @@ interface ThreadDetailsPanelProps extends Pick<
   showOpenInPicker: boolean;
   openInShortcutEnabled: boolean;
   gitCwd: string | null;
+  repositories?: readonly FilesystemBrowseEntry[] | undefined;
+  repositoryCwd?: string | undefined;
+  repositoriesPending?: boolean;
+  onRepositoryChange?: (path: string) => void;
   workspaceMutationId: string | null;
   isGitRepo: boolean;
   envLocked: boolean;
@@ -104,6 +109,10 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
   );
   const activeThreadRef = { environmentId: props.environmentId, threadId: props.threadId };
   const project = useProject(scopeProjectRef(props.environmentId, props.projectId));
+  const selectedRepository = props.repositories?.find(
+    (repository) => repository.fullPath === props.repositoryCwd,
+  );
+  const hasGitRepository = props.isGitRepo || selectedRepository !== undefined;
   const serverConfig = useServerConfigs().get(props.environmentId);
   // A No project thread's folder sits inside the shared scratch root, so it must never get git.
   // Until the config and project load, a No project thread looks like any other folder.
@@ -176,8 +185,11 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
           pullRequests: !(offersGit && props.isGitRepo) && visible.branch,
           git:
             offersGit &&
+            !props.repositoriesPending &&
             props.activeProjectName !== undefined &&
-            (visible.gitActions || (visible.changes && props.isGitRepo)),
+            (visible.gitActions ||
+              (visible.changes && hasGitRepository) ||
+              (visible.branch && selectedRepository !== undefined)),
         };
         return (
           <>
@@ -251,16 +263,50 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                       />
                     ) : null}
                     {show.git && props.gitCwd ? (
-                      <GitActionsControl
-                        compact={density !== "full"}
-                        showActions={visible.gitActions}
-                        showChanges={visible.changes}
-                        gitCwd={props.gitCwd}
-                        workspaceMutationId={props.workspaceMutationId}
-                        activeThreadRef={activeThreadRef}
-                        {...(props.draftId ? { draftId: props.draftId } : {})}
-                        {...(props.onOpenChanges ? { onOpenChanges: props.onOpenChanges } : {})}
-                      />
+                      <>
+                        {selectedRepository ? (
+                          <Menu>
+                            <MenuTrigger
+                              render={<ThreadDetailsControl part="select" />}
+                              aria-label={gt("Repository")}
+                            >
+                              <FolderGitIcon className={THREAD_DETAILS_PANEL_ICON_CLASS} />
+                              <span className={cn(THREAD_DETAILS_PANEL_LABEL_CLASS, "truncate")}>
+                                {selectedRepository.name}
+                              </span>
+                            </MenuTrigger>
+                            <MenuPopup align="start">
+                              <MenuRadioGroup
+                                value={selectedRepository.fullPath}
+                                onValueChange={(path) => props.onRepositoryChange?.(path)}
+                              >
+                                {props.repositories?.map((repository) => (
+                                  <MenuRadioItem
+                                    key={repository.fullPath}
+                                    value={repository.fullPath}
+                                    closeOnClick
+                                  >
+                                    {repository.name}
+                                  </MenuRadioItem>
+                                ))}
+                              </MenuRadioGroup>
+                            </MenuPopup>
+                          </Menu>
+                        ) : null}
+                        <GitActionsControl
+                          key={props.repositoryCwd ?? props.gitCwd}
+                          compact={density !== "full"}
+                          showActions={visible.gitActions}
+                          showChanges={visible.changes}
+                          showRepositoryBranch={visible.branch && selectedRepository !== undefined}
+                          gitCwd={props.repositoryCwd ?? props.gitCwd}
+                          syncThreadBranch={selectedRepository === undefined}
+                          workspaceMutationId={props.workspaceMutationId}
+                          activeThreadRef={activeThreadRef}
+                          {...(props.draftId ? { draftId: props.draftId } : {})}
+                          {...(props.onOpenChanges ? { onOpenChanges: props.onOpenChanges } : {})}
+                        />
+                      </>
                     ) : null}
                   </div>
                 </ThreadDetailsSection>

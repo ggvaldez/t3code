@@ -2009,13 +2009,14 @@ function windowsVswherePrerequisiteScript(arch: typeof BuildArch.Type): string {
   return [
     "$vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\\Installer\\vswhere.exe'",
     "if (!(Test-Path $vswhere)) { exit 1 }",
-    `$install = & $vswhere -latest -products * -requires ${toolComponents.join(" ")} -property installationPath`,
-    "if (!$install) { exit 1 }",
+    `$installs = & $vswhere -products * -requires ${toolComponents.join(" ")} -property installationPath`,
     "$kitsRoot = Get-ItemPropertyValue 'HKLM:\\SOFTWARE\\Microsoft\\Windows Kits\\Installed Roots' -Name KitsRoot10 -ErrorAction SilentlyContinue",
     "if (!$kitsRoot -or !(Test-Path (Join-Path $kitsRoot 'Lib'))) { exit 1 }",
-    "$msvcToolset = Get-ChildItem (Join-Path $install 'VC\\Tools\\MSVC') -Directory | Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1",
-    "if (!$msvcToolset) { exit 1 }",
-    `if (!(Test-Path (Join-Path $msvcToolset.FullName 'lib\\spectre\\${spectreArch}'))) { exit 1 }`,
+    "foreach ($install in $installs) {",
+    "  $msvcToolset = Get-ChildItem (Join-Path $install 'VC\\Tools\\MSVC') -Directory -ErrorAction SilentlyContinue | Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1",
+    `  if ($msvcToolset -and (Test-Path (Join-Path $msvcToolset.FullName 'lib\\spectre\\${spectreArch}'))) { exit 0 }`,
+    "}",
+    "exit 1",
   ].join("; ");
 }
 

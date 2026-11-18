@@ -72,6 +72,7 @@ export function RightPanelSurfaceContent(props: {
   readonly keybindings: ResolvedKeybindingsConfig;
   readonly configuredPreviewUrls: ReadonlyArray<string>;
   readonly workspaceMutationId: string | null;
+  readonly repositoryCwd?: string | undefined;
   readonly getShortcutContext: () => ShortcutMatchContext;
   readonly onSendAnnotation: (
     annotation: PreviewAnnotationPayload,
@@ -114,10 +115,11 @@ export function RightPanelSurfaceContent(props: {
       return (
         <Suspense fallback={null}>
           <DiffPanel
-            key={scopedThreadKey(threadRef)}
+            key={JSON.stringify([scopedThreadKey(threadRef), props.repositoryCwd])}
             mode="embedded"
             composerDraftTarget={props.composerDraftTarget}
             workspaceMutationId={props.workspaceMutationId}
+            repositoryCwd={props.repositoryCwd}
             visible={visible}
           />
         </Suspense>

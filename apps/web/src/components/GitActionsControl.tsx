@@ -36,6 +36,7 @@ import {
   CloudDownloadIcon,
   CloudUploadIcon,
   FileDiffIcon,
+  GitBranchIcon,
   GitBranchPlusIcon,
   GitCommitIcon,
   InfoIcon,
@@ -84,6 +85,8 @@ import {
 } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { Menu, MenuItem, MenuItemLabel, MenuPopup, MenuTrigger } from "~/components/ui/menu";
+import { ComboboxTrigger } from "./ui/combobox";
+import { BranchPicker, BranchPickerRefItem } from "./BranchPicker";
 import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Textarea } from "~/components/ui/textarea";
@@ -101,6 +104,7 @@ import { useQuietThreadProjection, useQuietThreadShell } from "~/state/entities"
 import { useProjectClone } from "~/state/projectClones";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { useEnvironmentQuery } from "~/state/query";
+import { usePaginatedBranches } from "~/state/queries";
 import { useFilesystemReadAccess } from "~/state/filesystem";
 import { reviewEnvironment } from "~/state/review";
 import { revisionedQuery } from "~/state/revisionedQuery";
@@ -143,6 +147,8 @@ interface GitActionsControlProps {
   compact?: boolean;
   showActions?: boolean;
   showChanges?: boolean;
+  showRepositoryBranch?: boolean;
+  syncThreadBranch?: boolean;
   onOpenChanges?: () => void;
   workspaceMutationId?: string | null;
 }
@@ -962,6 +968,85 @@ export function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
   );
 }
 
+function RepositoryBranchPicker({
+  environmentId,
+  cwd,
+  branch,
+  disabled,
+}: {
+  environmentId: ScopedThreadRef["environmentId"];
+  cwd: string;
+  branch: string | null;
+  disabled: boolean;
+}) {
+  const gt = useGT();
+  const messages = useMessages();
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [switching, setSwitching] = useState(false);
+  const branches = usePaginatedBranches({ environmentId, cwd: open ? cwd : null, query }, messages);
+  const switchRef = useAtomCommand(vcsEnvironment.switchRef, { reportFailure: false });
+  const byName = new Map(branches.refs.map((ref) => [ref.name, ref]));
+  const items = [...byName.keys()];
+  const label = branch ?? gt("(detached HEAD)");
+  const select = async (name: string) => {
+    if (disabled || switching || !byName.has(name) || name === branch) return;
+    setOpen(false);
+    setQuery("");
+    setSwitching(true);
+    try {
+      const result = await switchRef({ environmentId, input: { cwd, refName: name } });
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        toastManager.add({
+          type: "error",
+          title: gt("Action failed"),
+          description: thrownErrorMessage(squashAtomCommandFailure(result), messages),
+        });
+      }
+    } finally {
+      setSwitching(false);
+    }
+  };
+
+  return (
+    <BranchPicker
+      items={items}
+      filteredItems={items}
+      value={branch}
+      query={query}
+      onQueryChange={setQuery}
+      open={open}
+      onOpenChange={setOpen}
+      onSelectItem={(name) => void select(name)}
+      hasNextPage={branches.data?.nextCursor != null}
+      isFetchingNextPage={branches.isFetchingNextPage}
+      onLoadNext={branches.loadNext}
+      statusText={branches.error ?? (branches.isPending ? gt("Loading refs...") : null)}
+      popupProps={{ align: "start", className: "flex w-(--anchor-width) flex-col" }}
+      renderItem={(name, index) => {
+        const ref = byName.get(name);
+        return ref ? (
+          <BranchPickerRefItem
+            branch={ref}
+            projectCwd={cwd}
+            index={index}
+            onClick={() => void select(name)}
+          />
+        ) : null;
+      }}
+    >
+      <ComboboxTrigger
+        render={<ThreadDetailsControl part="select" />}
+        aria-label={gt("Branch: {branch}", { branch: label })}
+        disabled={disabled || switching}
+      >
+        <GitBranchIcon className={THREAD_DETAILS_PANEL_ICON_CLASS} />
+        <span className={cn(THREAD_DETAILS_PANEL_LABEL_CLASS, "truncate")}>{label}</span>
+      </ComboboxTrigger>
+    </BranchPicker>
+  );
+}
+
 export default function GitActionsControl({
   gitCwd,
   activeThreadRef,
@@ -969,6 +1054,8 @@ export default function GitActionsControl({
   compact = false,
   showActions = true,
   showChanges = true,
+  showRepositoryBranch = false,
+  syncThreadBranch = true,
   onOpenChanges,
   workspaceMutationId = null,
 }: GitActionsControlProps) {
@@ -1024,7 +1111,7 @@ export default function GitActionsControl({
     inlineSuccess?.scopeKey === successScopeKey && !inlineSuccessExpired ? inlineSuccess : null;
 
   const persistThreadBranchSync = (branch: string | null, manualSelection = false) => {
-    if (!activeThreadRef) {
+    if (!syncThreadBranch || !activeThreadRef) {
       return;
     }
 
@@ -1088,7 +1175,7 @@ export default function GitActionsControl({
   const sourceControlPresentation = getSourceControlPresentation(gitStatus?.sourceControlProvider);
   const changeRequestTerminology = sourceControlPresentation.terminology;
   const SourceControlIcon = sourceControlPresentation.Icon;
-  const isRepo = gitStatus?.isRepo ?? true;
+  const isRepo = gitStatus?.isRepo ?? syncThreadBranch;
   const hasPrimaryRemote = gitStatus?.hasPrimaryRemote ?? false;
   const gitStatusForActions = gitStatus;
   const changesBaseRef = useDiffPanelStore((state) =>
@@ -1176,7 +1263,13 @@ export default function GitActionsControl({
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- persists the draft thread branch when the live git status subscription reports a different branch
   useEffect(() => {
-    if (isGitActionRunning || isSelectingWorktreeBase || activeServerThread || isProjectCloning) {
+    if (
+      !syncThreadBranch ||
+      isGitActionRunning ||
+      isSelectingWorktreeBase ||
+      activeServerThread ||
+      isProjectCloning
+    ) {
       return;
     }
 
@@ -1196,6 +1289,7 @@ export default function GitActionsControl({
     isGitActionRunning,
     isProjectCloning,
     isSelectingWorktreeBase,
+    syncThreadBranch,
   ]);
 
   const isDefaultRef = gitStatusForActions?.isDefaultRef ?? false;
@@ -1630,7 +1724,15 @@ export default function GitActionsControl({
 
   return (
     <>
-      {!showActions ? null : !isRepo ? (
+      {showRepositoryBranch && gitStatus?.isRepo && activeEnvironmentId !== null ? (
+        <RepositoryBranchPicker
+          environmentId={activeEnvironmentId}
+          cwd={gitCwd}
+          branch={gitStatus.refName}
+          disabled={!canWriteSourceControl || isGitActionRunning}
+        />
+      ) : null}
+      {!showActions || (!syncThreadBranch && !isRepo) ? null : !isRepo ? (
         <ThreadDetailsControl
           size="xs"
           variant="ghost"
